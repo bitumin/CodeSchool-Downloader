@@ -5,8 +5,8 @@ from selenium import webdriver
 import os
 import urllib
 from time import sleep
+import traceback
 import atexit
-from selenium.webdriver.common.keys import Keys
 
 Username = ""
 Password = ""
@@ -38,66 +38,70 @@ def LinkGenerator():
         list.append(item['href'])
     return list
 
-def cleanPathName(name):
-    if name == "HTML/CSS":
-        name = "HTML&CSS"
-    elif name == ".NET":
-        name = "dot NET"
-    return name
-
 def readACourse(link):
     global browser
+
     course = {
         "name": "",
         "path": "",
         "url" : "",
-        "levels": []
+        "folders": []
     }
-    course_link = "https://www.codeschool.com" + link + "/videos"
-    browser.get(course_link)
+
+    browser.get("https://www.codeschool.com" + link + "/videos")
     html = browser.page_source
     soup = BeautifulSoup(html, 'lxml')
 
+    NAME = soup.find('h1',{'class','courseBanner-title'}).text
+    PATH = soup.find('p',{'class':'mbf tss ttu'}).find('a').text
 
-    course_name = soup.find('h1',{'class','courseBanner-title'}).text
-    course_path = soup.find('p',{'class':'mbf tss ttu'}).find('a').text
-    course_path = cleanPathName(course_path)
+    if PATH == "HTML/CSS":
+        PATH = "HTML&CSS"
+    elif PATH == ".NET":
+        PATH = "dot NET"
+    print PATH + "  /  " + NAME
 
-    course['name'] = course_name
-    course['path'] = course_path
-    course['url'] = course_link
+    course['name'] = NAME
+    course['path'] = PATH
+    course['url'] = "https://www.codeschool.com" + link + "/videos"
 
-    print course_path
-    print course_name
+    cleanSoup = soup.find('div',{'class':'row has-sector'})
+    videos = cleanSoup.findAll('a',{'class':'bdrn js-level-open'})
+    titles = cleanSoup.find_all('strong')
 
-    ls = soup.select("div.level")
-
-    levels = []
-    for l in ls:
-        level_name = l.select_one("p.tss.level-title strong").text
-        videos = l.select("li.list-item.video-title")
-        level = {
-            "name":"",
-            "videos":[]
-        }
-        level["name"] = level_name
-        print "  " + level_name
-        for v in videos:
+    videoCount = 0
+    flag = 0
+    for title in titles:
+        if title.has_attr('class'):
             video = {
-                "name":"",
-                "url":""
+                "name": "",
+                "url": "",
             }
-            video_title = v.select_one("strong.tct").text
-            click_url = v.select_one("a.bdrn.js-level-open")["href"]
+            URL = clickTitle(videos[videoCount]['href'])
 
-            print "   " + video_title
-            direct_url = clickTitle(click_url)
-            video["name"] = video_title
-            video["url"] = direct_url
-            level["videos"].append(video)
+            TITLE = title.text
+            if "?" in title.text:
+                TITLE.replace('?','<Q>')
 
-            # print direct_url
-        course["levels"].append(level)
+
+            video['name'] = TITLE
+            video['url'] = URL
+            folder['videos'].append(video)
+
+            videoCount+=1
+        else:
+            if flag:
+                course['folders'].append(folder)
+            folder = {
+                "name" : "",
+                "videos" : []
+            }
+            folder['name'] = title.text
+            flag = 1
+
+        if videoCount >= len(videos):
+            course['folders'].append(folder)
+            break
     return course
 
 def readVideoDirectURL():
@@ -108,20 +112,26 @@ def readVideoDirectURL():
     return URL
 
 def clickTitle(href):
-    global browsr
-    browser.execute_script('''document.querySelector("a[href='%s']").click()''' % href)
+    global browser
+    browser.execute_script("$('a[href*=" + href + "]').click();")
     sleep(2)
     URL = readVideoDirectURL()
-    browser.find_element_by_tag_name("body").send_keys(Keys.ESCAPE)
+    browser.execute_script("$('.js-video-manager-close').click();")
     sleep(2)
     return URL
 
-Links = LinkGenerator()
 sign_in()
-print "Signed !"
+Links = LinkGenerator()
 
 courses = []
 for index, link in enumerate(Links):
     print str(index) + "  " + "https://www.codeschool.com" + link + '/videos'
-    course = readACourse(link)
+
+    try:
+        course = readACourse(link)
+    except (RuntimeError, TypeError, NameError, AttributeError) as err:
+        print "Error while trying to build links to " + link
+        continue
+
+    print "Video links build to " + link
     courses.append(course)
